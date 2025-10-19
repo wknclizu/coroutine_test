@@ -36,6 +36,12 @@
 *.exe
 *.out
 *.app
+coroutine3
+coroutine2
 
 # debug information files
 *.dwo
+
+.clangd
+/.vscode
+/.cursor
