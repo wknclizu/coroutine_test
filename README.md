@@ -21,55 +21,97 @@ Calculate Fibonacci(30) using recursive algorithm, using clang++-21 with -O3 opt
 ## Results with All CPU Cores (128 cores)
 
 ```
+Context Switch Overhead Comparison
+Configuration:
+  Fibonacci N:      25
+  Total tasks:      1000
+  CPU frequency:    2.8 GHz
+=======================================================
+
 === Sequential (No Context Switch) ===
-  Total time:       9783118 ticks (3.49397e+06 ns) [3.49 ms]
-  Avg per task:     9783 ticks (3493.93 ns)
-  Throughput:       286207 tasks/sec
+  Total time:       892304 ticks (318680 ns)
+  Avg per task:     892 ticks (318.571 ns)
+  Throughput:       3.13794e+06 tasks/sec
 
 === Thread-based (1000 threads, one per task) ===
-  Total time:       1426221886 ticks (5.09365e+08 ns) [509 ms]
-  Creation time:    1177178750 ticks (4.20421e+08 ns, 82.5%)
-  Compute+Join time:159147666 ticks (5.68385e+07 ns, 11.2%) - Parallel execution + cleanup
-  Avg per task:     1426221 ticks (509365 ns)
-  Throughput:       1963.23 tasks/sec
-  Avg creation:     1177178 ticks (420421 ns) [420 μs per thread]
+  Total time:       1467181174 ticks (5.23993e+08 ns)
+  Creation time:    1291773918 ticks (4.61348e+08 ns, 88.0446%)
+  Compute+Join time:59885736 ticks (2.13878e+07 ns, 4.08169%) - Parallel execution + cleanup
+  Avg per task:     1467181 ticks (523993 ns)
+  Throughput:       1908.42 tasks/sec
+  Avg creation:     1291773 ticks (461348 ns)
 
 === Coroutine-based ===
-  Total time:       9771279006 ticks (3.48974e+09 ns) [3.49 seconds]
-  Creation overhead: 50854 ticks (18162.1 ns, 0.00052%)
-  Destruction overhead: 117676 ticks (42027.1 ns, 0.0012%)
-  Compute time:     9770862932 ticks (3.48959e+09 ns, 99.996%)
-  Avg per task:     9771279 ticks (3.48974e+06 ns)
-  Throughput:       286.554 tasks/sec
-  Avg creation:     50 ticks (18 ns)
-  Avg destruction:  117 ticks (42 ns)
+  Total time:       885217868 ticks (3.16149e+08 ns)
+  Creation overhead: 51002 ticks (18215 ns, 0.00576152%)
+  Destruction overhead: 93456 ticks (33377.1 ns, 0.0105574%)
+  Compute time:     884848402 ticks (3.16017e+08 ns, 99.9583%)
+  Avg per task:     885217 ticks (316149 ns)
+  Throughput:       3163.06 tasks/sec
+  Avg creation:     51 ticks (18.2143 ns)
+  Avg destruction:  93 ticks (33.2143 ns)
+
+=== Coroutine-based with co_yield ===
+  Total time:          881081370 ticks (3.14672e+08 ns)
+  Creation overhead:   52 ticks (18.5714 ns, 5.90184e-06%)
+  Destruction overhead:0 ticks (0 ns, 0%)
+  --- Round-trip measurements ---
+  Compute time:   880926120 ticks (3.14616e+08 ns, 99.9824%) (Measured inside coroutine)
+  Switch overhead: 102152 ticks (36482.9 ns, 0.0115939%) (Round-trip - Compute)
+  Avg per task:        881081 ticks (314672 ns)
+  Throughput:          3177.91 tasks/sec
+  Yield/Resume count:  1000
+  Avg round-trip:      881028 ticks (314653 ns)
+  Avg pure compute:    880926 ticks (314616 ns)
+  Avg switch overhead: 102 ticks (36.4286 ns) (This is the co_yield/resume cost)
 ```
 
 ## Results with Single CPU Core (taskset -c 0)
 
 ```
+Context Switch Overhead Comparison
+Configuration:
+  Fibonacci N:      25
+  Total tasks:      1000
+  CPU frequency:    2.8 GHz
+=======================================================
+
 === Sequential (No Context Switch) ===
-  Total time:       9777578 ticks (3.49199e+06 ns) [3.49 ms]
-  Avg per task:     9777 ticks (3491.79 ns)
-  Throughput:       286369 tasks/sec
+  Total time:       894644 ticks (319516 ns)
+  Avg per task:     894 ticks (319.286 ns)
+  Throughput:       3.12974e+06 tasks/sec
 
 === Thread-based (1000 threads, one per task) ===
-  Total time:       41657587134 ticks (1.48777e+10 ns) [14.9 seconds]
-  Creation time:    31787100820 ticks (1.13525e+10 ns, 76.3%)
-  Compute+Join time:9814475276 ticks (3.50517e+09 ns, 23.6%) - Parallel execution + cleanup
-  Avg per task:     41657587 ticks (1.48777e+07 ns)
-  Throughput:       67.2146 tasks/sec
-  Avg creation:     31787100 ticks (1.13525e+07 ns) [11.4 ms per thread]
+  Total time:       33453039890 ticks (1.19475e+10 ns)
+  Creation time:    32451607150 ticks (1.15899e+10 ns, 97.0065%)
+  Compute+Join time:940963868 ticks (3.36059e+08 ns, 2.81279%) - Parallel execution + cleanup
+  Avg per task:     33453039 ticks (1.19475e+07 ns)
+  Throughput:       83.6994 tasks/sec
+  Avg creation:     32451607 ticks (1.15899e+07 ns)
 
 === Coroutine-based ===
-  Total time:       9772636610 ticks (3.49023e+09 ns) [3.49 seconds]
-  Creation overhead: 50932 ticks (18190 ns, 0.00052%)
-  Destruction overhead: 110042 ticks (39300.7 ns, 0.0011%)
-  Compute time:     9772291950 ticks (3.4901e+09 ns, 99.996%)
-  Avg per task:     9772636 ticks (3.49023e+06 ns)
-  Throughput:       286.514 tasks/sec
-  Avg creation:     50 ticks (18 ns)
-  Avg destruction:  110 ticks (40 ns)
+  Total time:       884945426 ticks (3.16052e+08 ns)
+  Creation overhead: 50950 ticks (18196.4 ns, 0.00575742%)
+  Destruction overhead: 63596 ticks (22712.9 ns, 0.00718643%)
+  Compute time:     884625992 ticks (3.15938e+08 ns, 99.9639%)
+  Avg per task:     884945 ticks (316052 ns)
+  Throughput:       3164.04 tasks/sec
+  Avg creation:     50 ticks (17.8571 ns)
+  Avg destruction:  63 ticks (22.5 ns)
+
+=== Coroutine-based with co_yield ===
+  Total time:          881548560 ticks (3.14839e+08 ns)
+  Creation overhead:   50 ticks (17.8571 ns, 5.67184e-06%)
+  Destruction overhead:0 ticks (0 ns, 0%)
+  --- Round-trip measurements ---
+  Compute time:   881393808 ticks (3.14784e+08 ns, 99.9824%) (Measured inside coroutine)
+  Switch overhead: 102062 ticks (36450.7 ns, 0.0115776%) (Round-trip - Compute)
+  Avg per task:        881548 ticks (314839 ns)
+  Throughput:          3176.23 tasks/sec
+  Yield/Resume count:  1000
+  Avg round-trip:      881495 ticks (314820 ns)
+  Avg pure compute:    881393 ticks (314783 ns)
+  Avg switch overhead: 102 ticks (36.4286 ns) (This is the co_yield/resume cost)
 ```
 
 ## Running the Benchmark
