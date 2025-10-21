@@ -98,9 +98,9 @@ void test_threads(int n, int count) {
     std::cout << "  Creation time:    " << creation_time << " ticks (" 
               << RdtscClock::to_ns(creation_time) << " ns, "
               << (creation_time * 100.0 / total_time) << "%)\n";
-    std::cout << "  Compute+Join time:" << compute_and_join_time << " ticks (" 
+    std::cout << "  Compute time:      " << compute_and_join_time << " ticks (" 
               << RdtscClock::to_ns(compute_and_join_time) << " ns, "
-              << (compute_and_join_time * 100.0 / total_time) << "%) - Parallel execution + cleanup\n";
+              << (compute_and_join_time * 100.0 / total_time) << "%) - Parallel execution\n";
     std::cout << "  Avg per task:     " << (total_time / count) << " ticks (" 
               << RdtscClock::to_ns(total_time / count) << " ns)\n";
     std::cout << "  Throughput:       " << (count * 1e9 / RdtscClock::to_ns(total_time)) 
@@ -113,6 +113,7 @@ void test_threads(int n, int count) {
 thread_local uint64_t g_coro_creation_overhead = 0;
 thread_local uint64_t g_coro_destruction_overhead = 0;
 thread_local uint64_t g_coro_count = 0;
+thread_local uint64_t g_last_pure_compute_time = 0;
 
 struct Task {
     struct promise_type {
@@ -162,7 +163,13 @@ struct Task {
 };
 
 Task fib_task(double n) {
-    co_return fib(n);
+    auto compute_start = RdtscClock::now();
+    double result = fib(n);
+    auto compute_end = RdtscClock::now();
+    
+    g_last_pure_compute_time = compute_end - compute_start;
+    
+    co_return result;
 }
 
 void test_coroutines(int n, int count) {
@@ -174,19 +181,25 @@ void test_coroutines(int n, int count) {
     
     auto t_total_start = RdtscClock::now();
     
-    uint64_t compute_time = 0;
+    uint64_t total_resume_time = 0;  // Total time for resume() calls
+    uint64_t total_pure_compute_time = 0;  // Pure compute time inside coroutine
+    uint64_t total_switch_overhead = 0;  // Switch overhead = total_resume_time - total_pure_compute_time
     
     for (int i = 0; i < count; ++i) {
         auto task = fib_task(static_cast<double>(n));
         
-        // Resume to execute fib computation
-        auto t_compute_start = RdtscClock::now();
+        // Measure total resume time (includes switch overhead + compute time)
+        auto t_resume_start = RdtscClock::now();
         task.resume();
-        auto t_compute_end = RdtscClock::now();
-        compute_time += (t_compute_end - t_compute_start);
+        auto t_resume_end = RdtscClock::now();
+        total_resume_time += (t_resume_end - t_resume_start);
+        
+        total_pure_compute_time += g_last_pure_compute_time;
         
         volatile double result = task.result();
     }
+    
+    total_switch_overhead = total_resume_time - total_pure_compute_time;
     
     auto t_total_end = RdtscClock::now();
     uint64_t total_time = t_total_end - t_total_start;
@@ -199,9 +212,17 @@ void test_coroutines(int n, int count) {
     std::cout << "  Destruction overhead: " << g_coro_destruction_overhead << " ticks (" 
               << RdtscClock::to_ns(g_coro_destruction_overhead) << " ns, "
               << (g_coro_destruction_overhead * 100.0 / total_time) << "%)\n";
-    std::cout << "  Compute time:     " << compute_time << " ticks (" 
-              << RdtscClock::to_ns(compute_time) << " ns, "
-              << (compute_time * 100.0 / total_time) << "%)\n";
+    
+    std::cout << "  Resume time:      " << total_resume_time << " ticks (" 
+              << RdtscClock::to_ns(total_resume_time) << " ns, "
+              << (total_resume_time * 100.0 / total_time) << "%) - Includes switch + compute\n";
+    std::cout << "  Compute time:      " << total_pure_compute_time << " ticks (" 
+              << RdtscClock::to_ns(total_pure_compute_time) << " ns, "
+              << (total_pure_compute_time * 100.0 / total_time) << "%) - Measured inside coroutine\n";
+    std::cout << "  Switch overhead:  " << total_switch_overhead << " ticks (" 
+              << RdtscClock::to_ns(total_switch_overhead) << " ns, "
+              << (total_switch_overhead * 100.0 / total_time) << "%) - Resume time - Compute time\n";
+    
     std::cout << "  Avg per task:     " << (total_time / count) << " ticks (" 
               << RdtscClock::to_ns(total_time / count) << " ns)\n";
     std::cout << "  Throughput:       " << (count * 1e9 / RdtscClock::to_ns(total_time)) 
@@ -210,10 +231,12 @@ void test_coroutines(int n, int count) {
               << RdtscClock::to_ns(g_coro_creation_overhead / count) << " ns)\n";
     std::cout << "  Avg destruction:  " << (g_coro_destruction_overhead / count) << " ticks ("
               << RdtscClock::to_ns(g_coro_destruction_overhead / count) << " ns)\n";
+    std::cout << "  Avg switch overhead: " << (total_switch_overhead / count) << " ticks ("
+              << RdtscClock::to_ns(total_switch_overhead / count) << " ns)\n";
 }
 
 // Method 4: Coroutine-based with co_yield
-thread_local uint64_t g_resume_roundtrip_time = 0;
+thread_local uint64_t g_resume_time = 0;
 thread_local uint64_t g_yield_count = 0;
 thread_local uint64_t g_resume_count = 0;
 thread_local uint64_t g_gen_creation_overhead = 0;
@@ -270,7 +293,7 @@ struct Generator {
             auto t_start = RdtscClock::now();
             handle.resume();
             auto t_end = RdtscClock::now();
-            g_resume_roundtrip_time += (t_end - t_start);
+            g_resume_time += (t_end - t_start);
             g_resume_count++;
             return !handle.done();
         }
@@ -299,7 +322,7 @@ Generator fib_generator(double n, int count) {
 void test_coroutines_yield(int n, int count) {
     std::cout << "\n=== Coroutine-based with co_yield ===\n";
     
-    g_resume_roundtrip_time = 0;
+    g_resume_time = 0;
     g_pure_compute_time = 0;
     g_yield_count = 0;
     g_resume_count = 0;
@@ -320,37 +343,39 @@ void test_coroutines_yield(int n, int count) {
     auto t_total_end = RdtscClock::now();
     uint64_t total_time = t_total_end - t_total_start;
     
-    uint64_t total_switch_overhead = g_resume_roundtrip_time - g_pure_compute_time;
+    uint64_t total_switch_overhead = g_resume_time - g_pure_compute_time;
     
-    std::cout << "  Total time:          " << total_time << " ticks (" 
+    std::cout << "  Total time:       " << total_time << " ticks (" 
         << RdtscClock::to_ns(total_time) << " ns)\n";
-    std::cout << "  Creation overhead:   " << g_gen_creation_overhead << " ticks (" 
+    std::cout << "  Creation overhead: " << g_gen_creation_overhead << " ticks (" 
         << RdtscClock::to_ns(g_gen_creation_overhead) << " ns, "
         << (g_gen_creation_overhead * 100.0 / total_time) << "%)\n";
-    std::cout << "  Destruction overhead:" << g_gen_destruction_overhead << " ticks (" 
+    std::cout << "  Destruction overhead: " << g_gen_destruction_overhead << " ticks (" 
         << RdtscClock::to_ns(g_gen_destruction_overhead) << " ns, "
         << (g_gen_destruction_overhead * 100.0 / total_time) << "%)\n";
 
-    std::cout << "  --- Round-trip measurements ---\n";
-    std::cout << "  Compute time:   " << g_pure_compute_time << " ticks (" 
+    std::cout << "  Resume time:      " << g_resume_time << " ticks (" 
+        << RdtscClock::to_ns(g_resume_time) << " ns, "
+        << (g_resume_time * 100.0 / total_time) << "%) - Includes switch + compute\n";
+    std::cout << "  Compute time:      " << g_pure_compute_time << " ticks (" 
         << RdtscClock::to_ns(g_pure_compute_time) << " ns, "
-        << (g_pure_compute_time * 100.0 / total_time) << "%) (Measured inside coroutine)\n";
-    std::cout << "  Switch overhead: " << total_switch_overhead << " ticks (" 
+        << (g_pure_compute_time * 100.0 / total_time) << "%) - Measured inside coroutine\n";
+    std::cout << "  Switch overhead:  " << total_switch_overhead << " ticks (" 
         << RdtscClock::to_ns(total_switch_overhead) << " ns, "
-        << (total_switch_overhead * 100.0 / total_time) << "%) (Round-trip - Compute)\n";
+        << (total_switch_overhead * 100.0 / total_time) << "%) - Resume time - Compute time\n";
 
-    std::cout << "  Avg per task:        " << (total_time / count) << " ticks (" 
+    std::cout << "  Avg per task:     " << (total_time / count) << " ticks (" 
         << RdtscClock::to_ns(total_time / count) << " ns)\n";
-    std::cout << "  Throughput:          " << (count * 1e9 / RdtscClock::to_ns(total_time)) 
+    std::cout << "  Throughput:       " << (count * 1e9 / RdtscClock::to_ns(total_time)) 
         << " tasks/sec\n";
     std::cout << "  Yield/Resume count:  " << g_resume_count << "\n";
 
-    std::cout << "  Avg round-trip:      " << (g_resume_roundtrip_time / g_resume_count) << " ticks ("
-        << RdtscClock::to_ns(g_resume_roundtrip_time / g_resume_count) << " ns)\n";
-    std::cout << "  Avg pure compute:    " << (g_pure_compute_time / g_resume_count) << " ticks ("
+    std::cout << "  Avg resume time:  " << (g_resume_time / g_resume_count) << " ticks ("
+        << RdtscClock::to_ns(g_resume_time / g_resume_count) << " ns)\n";
+    std::cout << "  Avg pure compute: " << (g_pure_compute_time / g_resume_count) << " ticks ("
         << RdtscClock::to_ns(g_pure_compute_time / g_resume_count) << " ns)\n";
     std::cout << "  Avg switch overhead: " << (total_switch_overhead / g_resume_count) << " ticks ("
-        << RdtscClock::to_ns(total_switch_overhead / g_resume_count) << " ns) (This is the co_yield/resume cost)\n";
+        << RdtscClock::to_ns(total_switch_overhead / g_resume_count) << " ns)\n";
 }
 
 int main() {
